@@ -1,0 +1,6 @@
+{
+  "name": "Học Giỏi Văn Cùng Cô Yến Thanh",
+  "description": "Nền tảng học tập môn Ngữ văn - Cô Yến Thanh: kho tài liệu bài giảng, giao và nộp bài tập, chấm điểm và theo dõi tiến độ học sinh.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

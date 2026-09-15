@@ -1,0 +1,16 @@
+{
+  "students": [],
+  "materials": [],
+  "assignments": [],
+  "submissions": [],
+  "announcements": [],
+  "sessions": [
+    {
+      "token": "tok_445wwoln5wkmu2t7cpf",
+      "userId": "admin",
+      "role": "admin",
+      "createdAt": 1789485064467
+    }
+  ],
+  "adminPasswordHash": "$2b$10$gQ/PnAAJ23amKLIBMvEtcuEheHfYDVHQwBtN7GkAvZDJtRuV8xLFW"
+}
