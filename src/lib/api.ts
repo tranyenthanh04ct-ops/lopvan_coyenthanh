@@ -10,13 +10,42 @@ import {
 
 const TOKEN_KEY = 'yenthanh_auth_token';
 const USER_KEY = 'yenthanh_auth_user';
+const ROLE_KEY = 'yenthanh_last_role';
+
+const memStorage: Record<string, string> = {};
+
+function safeGetItem(key: string): string | null {
+  try {
+    return localStorage.getItem(key) ?? memStorage[key] ?? null;
+  } catch {
+    return memStorage[key] ?? null;
+  }
+}
+
+function safeSetItem(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // fallback to memory
+  }
+  memStorage[key] = value;
+}
+
+function safeRemoveItem(key: string): void {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // fallback to memory
+  }
+  delete memStorage[key];
+}
 
 export function getStoredToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY);
+  return safeGetItem(TOKEN_KEY);
 }
 
 export function getStoredUser(): AuthUser | null {
-  const raw = localStorage.getItem(USER_KEY);
+  const raw = safeGetItem(USER_KEY);
   if (!raw) return null;
   try {
     return JSON.parse(raw);
@@ -25,14 +54,24 @@ export function getStoredUser(): AuthUser | null {
   }
 }
 
+export function getLastRole(): 'admin' | 'student' | null {
+  const r = safeGetItem(ROLE_KEY);
+  return r === 'admin' || r === 'student' ? r : null;
+}
+
+export function setLastRole(role: 'admin' | 'student'): void {
+  safeSetItem(ROLE_KEY, role);
+}
+
 export function saveSession(token: string, user: AuthUser): void {
-  localStorage.setItem(TOKEN_KEY, token);
-  localStorage.setItem(USER_KEY, JSON.stringify(user));
+  safeSetItem(TOKEN_KEY, token);
+  safeSetItem(USER_KEY, JSON.stringify(user));
+  safeSetItem(ROLE_KEY, user.role);
 }
 
 export function clearSession(): void {
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(USER_KEY);
+  safeRemoveItem(TOKEN_KEY);
+  safeRemoveItem(USER_KEY);
 }
 
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
@@ -49,10 +88,15 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
     headers['Content-Type'] = 'application/json';
   }
 
-  const response = await fetch(endpoint, {
-    ...options,
-    headers,
-  });
+  let response: Response;
+  try {
+    response = await fetch(endpoint, {
+      ...options,
+      headers,
+    });
+  } catch (err: any) {
+    throw new Error('Không thể kết nối đến máy chủ. Vui lòng thử lại sau vài giây!');
+  }
 
   const data = await response.json().catch(() => ({}));
 

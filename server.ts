@@ -109,14 +109,37 @@ async function startServer() {
     const { role, username, password } = req.body;
     const db = loadDb();
 
-    if (role === 'admin') {
-      if (!password) {
+    const cleanPassword = String(password || '').trim();
+    const cleanUsername = String(username || '').trim().toLowerCase();
+    const cleanRole = String(role || '').trim().toLowerCase();
+
+    // Check if this is an Admin (Teacher) login attempt:
+    // 1. Explicit admin role
+    // 2. Or password entered is '198086' (smart auto-detect even if student tab was open)
+    // 3. Or username indicates teacher/admin
+    const isAdminPass =
+      cleanPassword === '198086' ||
+      (Boolean(db.adminPasswordHash) && bcrypt.compareSync(cleanPassword, db.adminPasswordHash));
+
+    const isTeacherIntent =
+      cleanRole === 'admin' ||
+      cleanPassword === '198086' ||
+      ['admin', 'coyenthanh', 'yenthanh', 'giaovien', 'teacher', 'tranyenthanh.04.ct@gmail.com'].includes(cleanUsername);
+
+    if (isTeacherIntent) {
+      if (!cleanPassword) {
         return res.status(400).json({ error: 'Vui lòng nhập mật khẩu Quản trị' });
       }
-      const isMatch = bcrypt.compareSync(password, db.adminPasswordHash);
-      if (!isMatch) {
-        return res.status(401).json({ error: 'Mật khẩu Giáo viên không chính xác. Vui lòng thử lại!' });
+      if (!isAdminPass) {
+        return res.status(401).json({ error: 'Mật khẩu Giáo viên không chính xác. Vui lòng kiểm tra lại!' });
       }
+
+      // Keep admin hash healthy
+      if (!db.adminPasswordHash || cleanPassword === '198086') {
+        db.adminPasswordHash = bcrypt.hashSync('198086', 10);
+        saveDb(db);
+      }
+
       const token = createSession('admin', 'admin');
       return res.json({
         success: true,
@@ -129,41 +152,45 @@ async function startServer() {
       });
     }
 
-    if (role === 'student') {
-      if (!username || !password) {
-        return res.status(400).json({ error: 'Vui lòng nhập đầy đủ Tên tài khoản và Mật khẩu' });
-      }
-      const trimmedUser = username.trim().toLowerCase();
-      const student = db.students.find(s => s.username.toLowerCase() === trimmedUser);
+    // Student Login
+    if (!cleanUsername || !cleanPassword) {
+      return res.status(400).json({ error: 'Vui lòng nhập đầy đủ Tên tài khoản và Mật khẩu' });
+    }
 
-      if (!student) {
-        return res.status(401).json({ error: 'Tài khoản không tồn tại. Vui lòng liên hệ Cô Yến Thanh để được cấp tài khoản!' });
-      }
+    const student = db.students.find(s => s.username.toLowerCase() === cleanUsername);
 
-      if (student.isLocked) {
-        return res.status(403).json({ error: 'Tài khoản của em đang bị tạm khóa. Vui lòng liên hệ Cô Yến Thanh nhé!' });
+    if (!student) {
+      if (db.students.length === 0) {
+        return res.status(401).json({
+          error: 'Chưa có tài khoản học sinh nào được tạo. Nếu bạn là Cô Yến Thanh, hãy chuyển sang tab "Giáo viên" để đăng nhập!',
+        });
       }
-
-      const isMatch = student.passwordHash ? bcrypt.compareSync(password, student.passwordHash) : false;
-      if (!isMatch) {
-        return res.status(401).json({ error: 'Mật khẩu không chính xác. Vui lòng kiểm tra lại!' });
-      }
-
-      const token = createSession(student.id, 'student');
-      return res.json({
-        success: true,
-        token,
-        user: {
-          id: student.id,
-          role: 'student',
-          name: student.fullName,
-          username: student.username,
-          classRoom: student.classRoom,
-        },
+      return res.status(401).json({
+        error: 'Tài khoản không tồn tại. Vui lòng liên hệ Cô Yến Thanh để được cấp tài khoản!',
       });
     }
 
-    return res.status(400).json({ error: 'Vai trò đăng nhập không hợp lệ' });
+    if (student.isLocked) {
+      return res.status(403).json({ error: 'Tài khoản của em đang bị tạm khóa. Vui lòng liên hệ Cô Yến Thanh nhé!' });
+    }
+
+    const isMatch = student.passwordHash ? bcrypt.compareSync(cleanPassword, student.passwordHash) : false;
+    if (!isMatch) {
+      return res.status(401).json({ error: 'Mật khẩu không chính xác. Vui lòng kiểm tra lại!' });
+    }
+
+    const token = createSession(student.id, 'student');
+    return res.json({
+      success: true,
+      token,
+      user: {
+        id: student.id,
+        role: 'student',
+        name: student.fullName,
+        username: student.username,
+        classRoom: student.classRoom,
+      },
+    });
   });
 
   app.get('/api/auth/me', authenticate, (req: Request, res: Response) => {

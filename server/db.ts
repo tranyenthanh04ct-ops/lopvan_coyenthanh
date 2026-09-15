@@ -95,13 +95,15 @@ export function saveDb(data: DatabaseSchema): void {
   }
 }
 
-// Session Helpers
+// Session Helpers (30 days validity)
+const SESSION_LIFETIME = 30 * 24 * 60 * 60 * 1000;
+
 export function createSession(userId: string, role: 'admin' | 'student'): string {
   const db = loadDb();
   const token = 'tok_' + Math.random().toString(36).substring(2) + Date.now().toString(36);
-  // Clean old sessions (> 14 days)
+  // Clean old sessions (> 30 days)
   const now = Date.now();
-  const validSessions = db.sessions.filter(s => now - s.createdAt < 14 * 24 * 60 * 60 * 1000);
+  const validSessions = db.sessions.filter(s => now - s.createdAt < SESSION_LIFETIME);
   validSessions.push({ token, userId, role, createdAt: now });
   db.sessions = validSessions;
   saveDb(db);
@@ -113,7 +115,7 @@ export function getSession(token: string): UserSession | null {
   const session = db.sessions.find(s => s.token === token);
   if (!session) return null;
   const now = Date.now();
-  if (now - session.createdAt > 14 * 24 * 60 * 60 * 1000) {
+  if (now - session.createdAt > SESSION_LIFETIME) {
     // expired
     db.sessions = db.sessions.filter(s => s.token !== token);
     saveDb(db);
