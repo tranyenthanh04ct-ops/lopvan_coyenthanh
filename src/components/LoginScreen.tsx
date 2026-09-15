@@ -44,40 +44,45 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
     setErrorMessage(null);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (e?: React.FormEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
     setErrorMessage(null);
 
     const cleanPass = password.trim();
     const cleanUser = username.trim();
+    let effectiveRole: UserRole = activeRole;
 
-    if (activeRole === 'admin' && !cleanPass) {
+    // Smart detection: if user typed 198086 in password or username
+    if (cleanPass === '198086' || cleanUser === '198086' || cleanUser === 'admin' || cleanUser === 'coyenthanh') {
+      effectiveRole = 'admin';
+      if (activeRole !== 'admin') {
+        setActiveRole('admin');
+      }
+    }
+
+    if (effectiveRole === 'admin' && !cleanPass && cleanUser !== '198086') {
       const msg = 'Vui lòng nhập mật khẩu Quản trị của Cô Yến Thanh';
       setErrorMessage(msg);
       error(msg);
       return;
     }
 
-    if (activeRole === 'student' && (!cleanUser || !cleanPass)) {
-      // Smart detection: if user entered admin password in student form without username
-      if (cleanPass === '198086' || cleanUser === '198086') {
-        setActiveRole('admin');
-        setPassword(cleanPass || cleanUser);
-        // Continue to login as admin
-      } else {
-        const msg = 'Vui lòng nhập đầy đủ Tên tài khoản và Mật khẩu học sinh';
-        setErrorMessage(msg);
-        error(msg);
-        return;
-      }
+    if (effectiveRole === 'student' && (!cleanUser || !cleanPass)) {
+      const msg = 'Vui lòng nhập đầy đủ Tên tài khoản và Mật khẩu học sinh';
+      setErrorMessage(msg);
+      error(msg);
+      return;
     }
 
     try {
       setLoading(true);
       const user = await apiAuth.login({
-        role: activeRole,
-        username: activeRole === 'student' ? cleanUser : undefined,
-        password: cleanPass,
+        role: effectiveRole,
+        username: effectiveRole === 'student' ? cleanUser : undefined,
+        password: cleanPass || (cleanUser === '198086' ? '198086' : ''),
       });
 
       success(`Đăng nhập thành công! Chào mừng ${user.name}`);
@@ -164,7 +169,14 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
           )}
 
           {/* Form */}
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form
+            action="#"
+            onSubmit={e => {
+              e.preventDefault();
+              handleSubmit(e);
+            }}
+            className="space-y-4"
+          >
             {activeRole === 'admin' ? (
               <div>
                 <div className="flex items-center justify-between mb-1.5">
@@ -191,6 +203,12 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                     onChange={e => {
                       setPassword(e.target.value);
                       if (errorMessage) setErrorMessage(null);
+                    }}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleSubmit();
+                      }
                     }}
                     placeholder="Nhập mật khẩu quản trị..."
                     className="w-full pl-10 pr-11 py-3.5 rounded-2xl border border-rose-200 bg-rose-50/30 text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-rose-400 focus:bg-white transition"
@@ -231,6 +249,12 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                         setUsername(e.target.value);
                         if (errorMessage) setErrorMessage(null);
                       }}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleSubmit();
+                        }
+                      }}
                       placeholder="Ví dụ: nam.9a1"
                       className="w-full pl-10 pr-4 py-3.5 rounded-2xl border border-slate-200 bg-slate-50/50 text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400 focus:bg-white transition"
                       autoFocus
@@ -258,6 +282,12 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                         setPassword(e.target.value);
                         if (errorMessage) setErrorMessage(null);
                       }}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleSubmit();
+                        }
+                      }}
                       placeholder="Nhập mật khẩu do Cô cấp"
                       className="w-full pl-10 pr-11 py-3.5 rounded-2xl border border-slate-200 bg-slate-50/50 text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400 focus:bg-white transition"
                     />
@@ -278,6 +308,10 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
               id="login-submit-button"
               type="submit"
               disabled={loading}
+              onClick={e => {
+                e.preventDefault();
+                handleSubmit();
+              }}
               className={`w-full mt-3 py-3.5 px-4 rounded-2xl text-white font-bold text-sm shadow-md transition-all flex items-center justify-center gap-2 ${
                 activeRole === 'admin'
                   ? 'bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 shadow-rose-200 active:scale-[0.99]'

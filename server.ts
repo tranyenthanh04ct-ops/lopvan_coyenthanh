@@ -89,6 +89,11 @@ async function startServer() {
     res.json({ status: 'ok', name: 'Học Giỏi Văn Cùng Cô Yến Thanh' });
   });
 
+  // Favicon handler
+  app.get('/favicon.ico', (_req, res) => {
+    res.status(204).end();
+  });
+
   // 1. File Upload endpoint
   app.post('/api/upload', authenticate, upload.single('file'), (req: Request, res: Response) => {
     if (!req.file) {
@@ -104,14 +109,84 @@ async function startServer() {
     });
   });
 
-  // 2. Auth Routes
-  app.post('/api/auth/login', (req: Request, res: Response) => {
-    const { role, username, password } = req.body;
+  // 2. Comprehensive Auth & Login Handler
+  const handleLogin = (req: Request, res: Response) => {
+    const role = req.body?.role || req.query?.role;
+    const username = req.body?.username || req.query?.username;
+    const password = req.body?.password || req.query?.password;
     const db = loadDb();
 
     const cleanPassword = String(password || '').trim();
     const cleanUsername = String(username || '').trim().toLowerCase();
     const cleanRole = String(role || '').trim().toLowerCase();
+
+    // Check if client expects HTML (like a browser form POST directly from page)
+    const isHtmlRequest =
+      Boolean(req.headers.accept?.includes('text/html')) &&
+      !req.xhr &&
+      Boolean(req.headers['content-type']?.includes('application/x-www-form-urlencoded'));
+
+    const sendSuccess = (token: string, user: any) => {
+      if (isHtmlRequest) {
+        return res.send(`<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8"/>
+  <title>Đăng nhập thành công</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <style>
+    body { font-family: system-ui, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #fff1f2; color: #9f1239; }
+    .card { background: white; padding: 2rem; border-radius: 1.5rem; box-shadow: 0 10px 25px -5px rgba(244,63,94,0.15); text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2 style="margin:0 0 0.5rem 0;">🌸 Đăng nhập thành công!</h2>
+    <p style="margin:0; color:#475569;">Chào mừng ${user.name}. Đang chuyển hướng vào hệ thống...</p>
+  </div>
+  <script>
+    try {
+      localStorage.setItem('yenthanh_auth_token', ${JSON.stringify(token)});
+      localStorage.setItem('yenthanh_auth_user', ${JSON.stringify(JSON.stringify(user))});
+      localStorage.setItem('yenthanh_last_role', ${JSON.stringify(user.role)});
+    } catch(e) {}
+    window.location.replace('/');
+  </script>
+</body>
+</html>`);
+      }
+      return res.json({
+        success: true,
+        token,
+        user,
+      });
+    };
+
+    const sendError = (status: number, message: string) => {
+      if (isHtmlRequest) {
+        return res.status(status).send(`<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8"/>
+  <title>Lỗi đăng nhập</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <style>
+    body { font-family: system-ui, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #fff1f2; color: #9f1239; }
+    .card { background: white; padding: 2rem; border-radius: 1.5rem; box-shadow: 0 10px 25px -5px rgba(244,63,94,0.15); text-align: center; max-width: 400px; }
+    a { display: inline-block; margin-top: 1.25rem; padding: 0.6rem 1.2rem; background: #e11d48; color: white; text-decoration: none; border-radius: 1rem; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h3 style="margin:0 0 0.5rem 0; color:#e11d48;">Đăng nhập không thành công</h3>
+    <p style="margin:0; color:#475569;">${message}</p>
+    <a href="/">Quay lại trang đăng nhập</a>
+  </div>
+</body>
+</html>`);
+      }
+      return res.status(status).json({ error: message });
+    };
 
     // Check if this is an Admin (Teacher) login attempt:
     // 1. Explicit admin role
@@ -128,10 +203,10 @@ async function startServer() {
 
     if (isTeacherIntent) {
       if (!cleanPassword) {
-        return res.status(400).json({ error: 'Vui lòng nhập mật khẩu Quản trị' });
+        return sendError(400, 'Vui lòng nhập mật khẩu Quản trị của Cô Yến Thanh');
       }
       if (!isAdminPass) {
-        return res.status(401).json({ error: 'Mật khẩu Giáo viên không chính xác. Vui lòng kiểm tra lại!' });
+        return sendError(401, 'Mật khẩu Giáo viên không chính xác. Vui lòng kiểm tra lại!');
       }
 
       // Keep admin hash healthy
@@ -141,56 +216,67 @@ async function startServer() {
       }
 
       const token = createSession('admin', 'admin');
-      return res.json({
-        success: true,
-        token,
-        user: {
-          id: 'admin',
-          role: 'admin',
-          name: 'Cô Yến Thanh (Admin)',
-        },
+      return sendSuccess(token, {
+        id: 'admin',
+        role: 'admin',
+        name: 'Cô Yến Thanh (Admin)',
       });
     }
 
     // Student Login
     if (!cleanUsername || !cleanPassword) {
-      return res.status(400).json({ error: 'Vui lòng nhập đầy đủ Tên tài khoản và Mật khẩu' });
+      return sendError(400, 'Vui lòng nhập đầy đủ Tên tài khoản và Mật khẩu');
     }
 
     const student = db.students.find(s => s.username.toLowerCase() === cleanUsername);
 
     if (!student) {
       if (db.students.length === 0) {
-        return res.status(401).json({
-          error: 'Chưa có tài khoản học sinh nào được tạo. Nếu bạn là Cô Yến Thanh, hãy chuyển sang tab "Giáo viên" để đăng nhập!',
-        });
+        return sendError(401, 'Chưa có tài khoản học sinh nào được tạo. Nếu bạn là Cô Yến Thanh, hãy chuyển sang tab "Giáo viên" để đăng nhập!');
       }
-      return res.status(401).json({
-        error: 'Tài khoản không tồn tại. Vui lòng liên hệ Cô Yến Thanh để được cấp tài khoản!',
-      });
+      return sendError(401, 'Tài khoản không tồn tại. Vui lòng liên hệ Cô Yến Thanh để được cấp tài khoản!');
     }
 
     if (student.isLocked) {
-      return res.status(403).json({ error: 'Tài khoản của em đang bị tạm khóa. Vui lòng liên hệ Cô Yến Thanh nhé!' });
+      return sendError(403, 'Tài khoản của em đang bị tạm khóa. Vui lòng liên hệ Cô Yến Thanh nhé!');
     }
 
     const isMatch = student.passwordHash ? bcrypt.compareSync(cleanPassword, student.passwordHash) : false;
     if (!isMatch) {
-      return res.status(401).json({ error: 'Mật khẩu không chính xác. Vui lòng kiểm tra lại!' });
+      return sendError(401, 'Mật khẩu không chính xác. Vui lòng kiểm tra lại!');
     }
 
     const token = createSession(student.id, 'student');
-    return res.json({
-      success: true,
-      token,
-      user: {
-        id: student.id,
-        role: 'student',
-        name: student.fullName,
-        username: student.username,
-        classRoom: student.classRoom,
-      },
+    return sendSuccess(token, {
+      id: student.id,
+      role: 'student',
+      name: student.fullName,
+      username: student.username,
+      classRoom: student.classRoom,
     });
+  };
+
+  // Register login on all possible aliases (POST)
+  const LOGIN_ROUTES = [
+    '/api/auth/login',
+    '/api/login',
+    '/api/admin/login',
+    '/api/teacher/login',
+    '/auth/login',
+    '/login',
+    '/admin/login',
+    '/teacher/login',
+    '/admin',
+    '/',
+  ];
+
+  LOGIN_ROUTES.forEach(route => {
+    app.post(route, handleLogin);
+  });
+
+  // GET on login API routes returns a status instead of 404
+  app.get(['/api/auth/login', '/api/login', '/api/admin/login', '/api/teacher/login'], (_req: Request, res: Response) => {
+    res.json({ status: 'ready', message: 'Hệ thống đăng nhập sẵn sàng. Vui lòng gửi yêu cầu qua POST.' });
   });
 
   app.get('/api/auth/me', authenticate, (req: Request, res: Response) => {
@@ -536,7 +622,7 @@ async function startServer() {
   });
 
   // --- 8. Announcements ---
-  app.get('/api/announcements', authenticate, (_req: Request, res: Response) => {
+  app.get(['/api/announcements', '/api/admin/announcements'], authenticate, (_req: Request, res: Response) => {
     const db = loadDb();
     res.json(db.announcements);
   });
@@ -754,6 +840,11 @@ async function startServer() {
       submission: sub,
       message: isOfficialSubmit ? 'Nộp bài thành công! Cô Yến Thanh sẽ chấm bài cho em sớm nhé 🌸' : 'Đã lưu bản nháp thành công!',
     });
+  });
+
+  // Unknown API fallback
+  app.all('/api/*', (_req: Request, res: Response) => {
+    res.status(404).json({ error: 'Đường dẫn API không tồn tại hoặc đã được chuyển sang đường dẫn mới' });
   });
 
   // --- Vite middleware for development & production serving ---

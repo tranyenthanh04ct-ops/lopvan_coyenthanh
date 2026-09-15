@@ -101,6 +101,9 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
   const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {
+    if (response.status === 404) {
+      throw new Error(data.error || 'Đường dẫn xử lý tạm thời không phản hồi (404). Đang thử kết nối lại...');
+    }
     throw new Error(data.error || `Yêu cầu thất bại (${response.status})`);
   }
 
@@ -110,10 +113,30 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
 // Auth API
 export const apiAuth = {
   login: async (credentials: { role: 'admin' | 'student'; username?: string; password: string }) => {
-    const res = await request<{ success: boolean; token: string; user: AuthUser }>('/api/auth/login', {
-      method: 'POST',
-      body: JSON.stringify(credentials),
-    });
+    let res: { success: boolean; token: string; user: AuthUser };
+    try {
+      res = await request<{ success: boolean; token: string; user: AuthUser }>('/api/auth/login', {
+        method: 'POST',
+        body: JSON.stringify(credentials),
+      });
+    } catch (err: any) {
+      // Automatic fallback in case of route transition or 404
+      if (err.message && (err.message.includes('404') || err.message.includes('không phản hồi'))) {
+        try {
+          res = await request<{ success: boolean; token: string; user: AuthUser }>('/api/login', {
+            method: 'POST',
+            body: JSON.stringify(credentials),
+          });
+        } catch {
+          res = await request<{ success: boolean; token: string; user: AuthUser }>('/login', {
+            method: 'POST',
+            body: JSON.stringify(credentials),
+          });
+        }
+      } else {
+        throw err;
+      }
+    }
     saveSession(res.token, res.user);
     return res.user;
   },
